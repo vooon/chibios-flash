@@ -3,7 +3,6 @@
 // TODO: check support for non sst25 devices
 
 #include "flash25.h"
-#include "chprintf.h"
 
 /* SST25 command set */
 #define CMD_READ		0x03
@@ -34,10 +33,13 @@
 #define STAT_AAI		(1<<6)
 #define STAT_BPL		(1<<7)
 
+#ifndef ARRAY_SIZE
+#define ARRAY_SIZE(arr)	(sizeof(arr)/sizeof(arr[0]))
+#endif
 
-#define INFO(name_, id_, ps_, es_, nr_)		{ name_, id_, ps_, es_, nr_ }
+#define INFO(name_, id_, ps_, es_, nr_)		{ /*name_,*/ id_, ps_, es_, nr_ }
 struct flash_info {
-	const char *name;
+	/*const char *name;*/
 	uint32_t jdec_id;
 	uint16_t page_size;
 	uint16_t erase_size;
@@ -100,11 +102,24 @@ static bool_t f25_vmt_nop(void *instance __attribute__((unused)))
 
 static bool_t f25_connect(Flash25Driver *inst)
 {
-	uint32_t jid = flash_get_jdec_id(inst->config);
+	struct flash_info *ptbl;
 
-	chprintf(&SD1, "JID: %x\n", jid);
+	inst->state = BLK_CONNECTING;
+	inst->jdec_id = flash_get_jdec_id(inst->config);
 
-	return CH_SUCCESS;
+	for (ptbl = flash_info_table;
+			ptbl < (flash_info_table + ARRAY_SIZE(flash_info_table));
+			ptbl++)
+		if (ptbl->jdec_id == inst->jdec_id) {
+			inst->state = BLK_ACTIVE;
+			inst->page_size = ptbl->page_size;
+			inst->erase_size = ptbl->erase_size;
+			inst->nr_pages = ptbl->nr_pages;
+			return CH_SUCCESS;
+		}
+
+	inst->state = BLK_STOP;
+	return CH_FAILED;
 }
 
 static bool_t f25_read(Flash25Driver *inst, uint32_t startblk,
@@ -127,7 +142,12 @@ static bool_t f25_erase(Flash25Driver *inst, uint32_t startsect, uint32_t n)
 
 static bool_t f25_get_info(Flash25Driver *inst, BlockDeviceInfo *bdip)
 {
-	return CH_FAILED;
+	if (inst->state != BLK_ACTIVE)
+		return CH_FAILED;
+
+	bdip->blk_size = inst->page_size;
+	bdip->blk_num = inst->nr_pages;
+	return CH_SUCCESS;
 }
 
 static const struct Flash25DriverVMT f25_vmt = {

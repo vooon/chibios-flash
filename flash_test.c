@@ -43,8 +43,17 @@ static msg_t th_test(void *arg __attribute__((unused)))
 	f25Start(&FLASH25, &flash_cfg);
 
 	while (true) {
-		chprintf(&SD1, "Connecting\n");
-		blkConnect(&FLASH25);
+		chprintf(&SD1, "Connecting... ");
+
+		if (blkConnect(&FLASH25) == CH_SUCCESS) {
+			chprintf(&SD1, "OK, JDEC ID: 0x%06X\n", f25GetJdecID(&FLASH25));
+			chprintf(&SD1, "Page sz: %d, erase sz: %d, pages: %d\n",
+					FLASH25.page_size, FLASH25.erase_size, FLASH25.nr_pages);
+		}
+		else {
+			chprintf(&SD1, "FAILED\n");
+		}
+
 		chThdSleepMilliseconds(1000);
 	};
 
