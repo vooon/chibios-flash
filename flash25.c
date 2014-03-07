@@ -37,6 +37,14 @@
 #define ARRAY_SIZE(arr)	(sizeof(arr)/sizeof(arr[0]))
 #endif
 
+#define DEBUG_FLASH25
+#ifdef DEBUG_FLASH25
+#include "chprintf.h"
+#define dbgPrint(fmt, args...)	chprintf(&SD1, "%s: " fmt "\n", __func__, ##args)
+#else
+#define dbgPrint(fmt, args...)
+#endif
+
 #define FLASH_TIMEOUT	MS2ST(10)
 #define ERASE_TIMEOUT	MS2ST(100)
 
@@ -96,6 +104,7 @@ static bool_t flash_is_busy(const Flash25Config *cfg)
 	uint8_t stat;
 
 	flash_transfer(cfg, &cmd, 1, &stat, 1);
+	dbgPrint("sr: %02x", stat);
 	return !!(stat & STAT_BUSY);
 }
 
@@ -169,6 +178,7 @@ static void flash_read(const Flash25Config *cfg, uint32_t addr,
 		uint8_t *buffer, uint32_t nbytes)
 {
 	uint8_t cmd[4];
+	dbgPrint("addr: 0x%06x, nbytes: %d", addr, nbytes);
 	flash_prepare_cmd(cmd, CMD_READ, addr);
 	flash_transfer(cfg, cmd, sizeof(cmd), buffer, nbytes);
 }
@@ -181,6 +191,7 @@ static void flash_fast_read(const Flash25Config *cfg, uint32_t addr,
 		uint8_t *buffer, uint32_t nbytes)
 {
 	uint8_t cmd[5];
+	dbgPrint("addr: 0x%06x, nbytes: %d", addr, nbytes);
 	flash_prepare_cmd(cmd, CMD_FAST_READ, addr);
 	cmd[4] = 0xa5; /* dummy byte */
 	flash_transfer(cfg, cmd, sizeof(cmd), buffer, nbytes);
@@ -202,7 +213,7 @@ static void flash_wrlock(const Flash25Config *cfg, bool_t lock)
  * @notapi
  */
 static bool_t flash_write_byte(const Flash25Config *cfg, uint32_t addr,
-		uint8_t *buffer, uint32_t nbytes)
+		const uint8_t *buffer, uint32_t nbytes)
 {
 	uint8_t cmd[5];
 	bool_t ret;
@@ -235,7 +246,7 @@ static bool_t flash_write_byte(const Flash25Config *cfg, uint32_t addr,
  * @notapi
  */
 static bool_t flash_write_word(const Flash25Config *cfg, uint32_t addr,
-		uint8_t *buff, uint32_t nbytes)
+		const uint8_t *buff, uint32_t nbytes)
 {
 	uint32_t nwords = (nbytes + 1) / 2;
 	uint8_t cmd[4];
@@ -338,11 +349,20 @@ static bool_t flash_erase_block(const Flash25Config *cfg, uint32_t addr)
  * VMT functions
  */
 
+/**
+ * @brief for unused fields of VMT
+ * @notapi
+ */
 static bool_t f25_vmt_nop(void *instance __attribute__((unused)))
 {
 	return CH_SUCCESS;
 }
 
+/**
+ * @brief probe flash chip
+ * Select page/erase/size of chip
+ * @api
+ */
 static bool_t f25_connect(Flash25Driver *inst)
 {
 	const struct flash_info *ptbl;
@@ -360,7 +380,8 @@ static bool_t f25_connect(Flash25Driver *inst)
 			inst->nr_pages = ptbl->nr_pages;
 
 			/* disable write protection BP[0..3] = 0 */
-			flash_wrsr(inst->config, 0);
+			//flash_wrsr(inst->config, 0);
+			//flash_wrsr(inst->config, 0);
 			return CH_SUCCESS;
 		}
 
@@ -368,25 +389,76 @@ static bool_t f25_connect(Flash25Driver *inst)
 	return CH_FAILED;
 }
 
+/**
+ * @brief reads blocks from flash
+ * @api
+ */
 static bool_t f25_read(Flash25Driver *inst, uint32_t startblk,
 		uint8_t *buffer, uint32_t n)
 {
 	uint32_t addr = startblk * inst->page_size;
+	uint32_t nbytes = n * inst->page_size;
 
+	chDbgCheck(inst->state == BLK_ACTIVE, "f25_read()");
+
+	flash_read(inst->config, addr, buffer, nbytes);
+	//flash_fast_read(inst->config, addr, buffer, nbytes);
 	return CH_SUCCESS;
 }
 
+/**
+ * @brief writes blocks to flash
+ * @api
+ */
 static bool_t f25_write(Flash25Driver *inst, uint32_t startblk,
 		const uint8_t *buffer, uint32_t n)
 {
-	return CH_SUCCESS;
+	uint32_t addr = startblk * inst->page_size;
+	uint32_t nbytes = n * inst->page_size;
+
+	chDbgCheck(inst->state == BLK_ACTIVE, "f25_write()");
+
+	//return flash_write_byte(inst->config, addr, buffer, nbytes);
+	return flash_write_word(inst->config, addr, buffer, nbytes);
 }
 
+/**
+ * @brief erase blocks on flash
+ * If startblk is 0 and n more than chip capacity then erases whole chip.
+ *
+ * @param[in] startblk start block number
+ * @param[in] n block count (must be equal to erase size, eg. for 4096 es, 256 ps -> n % 4096/256)
+ * @api
+ */
 static bool_t f25_erase(Flash25Driver *inst, uint32_t startblk, uint32_t n)
 {
-	return CH_SUCCESS;
+	uint32_t addr;
+	uint32_t nblocks;
+	bool_t ret = CH_FAILED;
+
+	chDbgCheck(inst->state == BLK_ACTIVE, "f25_erase()");
+
+	if (startblk == 0 && n >= inst->nr_pages)
+		return flash_chip_erase(inst->config);
+
+	chDbgAssert((n % (inst->erase_size / inst->page_size)) == 0,
+			"f25_erase()", "invalid size");
+
+	addr = startblk * inst->page_size;
+	nblocks = (n + 1) / (inst->erase_size / inst->page_size);
+	for (; nblocks > 0; nblocks--, addr += inst->erase_size) {
+		ret = flash_erase_block(inst->config, addr);
+		if (ret == CH_FAILED)
+			break;
+	}
+
+	return ret;
 }
 
+/**
+ * @brief Get block device info (page size and noumber of pages)
+ * @api
+ */
 static bool_t f25_get_info(Flash25Driver *inst, BlockDeviceInfo *bdip)
 {
 	if (inst->state != BLK_ACTIVE)
@@ -440,6 +512,10 @@ void f25ObjectInit(Flash25Driver *flp)
 	flp->nr_pages = 0;
 }
 
+/**
+ * @brief start flash device
+ * @api
+ */
 void f25Start(Flash25Driver *flp, const Flash25Config *cfg)
 {
 	chDbgCheck((flp != NULL) && (cfg != NULL), "f25Start");
@@ -450,6 +526,10 @@ void f25Start(Flash25Driver *flp, const Flash25Config *cfg)
 	flp->state = BLK_ACTIVE;
 }
 
+/**
+ * @brief stops device
+ * @api
+ */
 void f25Stop(Flash25Driver *flp)
 {
 	chDbgCheck(flp != NULL, "f25Stop");

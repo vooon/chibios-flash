@@ -36,6 +36,16 @@ static const Flash25Config flash_cfg = {
 	.spicfg = &spi1_cfg
 };
 
+static uint8_t flash_buff[256]; /* note: for sst25 */
+
+static void print_buff16(uint8_t buf[16])
+{
+	chprintf(&SD1, "buff[16]:");
+	for (int i = 0; i < 16; i++)
+		chprintf(&SD1, " %02x", buf[i]);
+	sdPut(&SD1, '\n');
+}
+
 static WORKING_AREA(wa_test, 1024);
 static msg_t th_test(void *arg __attribute__((unused)))
 {
@@ -43,6 +53,7 @@ static msg_t th_test(void *arg __attribute__((unused)))
 	f25Start(&FLASH25, &flash_cfg);
 
 	while (true) {
+		chThdSleepMilliseconds(5000);
 		chprintf(&SD1, "Connecting... ");
 
 		if (blkConnect(&FLASH25) == CH_SUCCESS) {
@@ -52,9 +63,60 @@ static msg_t th_test(void *arg __attribute__((unused)))
 		}
 		else {
 			chprintf(&SD1, "FAILED\n");
+			continue;
 		}
 
-		chThdSleepMilliseconds(1000);
+		chprintf(&SD1, "Reading... ");
+		if (blkRead(&FLASH25, 0, flash_buff, 1) == CH_SUCCESS) {
+			chprintf(&SD1, "OK\n");
+			print_buff16(flash_buff);
+		}
+		else {
+			chprintf(&SD1, "FAILED\n");
+			continue;
+		}
+
+		chprintf(&SD1, "Fill pattern 0xa5\n");
+		memset(flash_buff, 0xa5, sizeof(flash_buff));
+		print_buff16(flash_buff);
+		chprintf(&SD1, "Writing... ");
+		if (blkWrite(&FLASH25, 0, flash_buff, 1) == CH_SUCCESS) {
+			chprintf(&SD1, "OK\n");
+		}
+		else {
+			chprintf(&SD1, "FAILED\n");
+			continue;
+		}
+
+		memset(flash_buff, 0, sizeof(flash_buff));
+		chprintf(&SD1, "Reading... ");
+		if (blkRead(&FLASH25, 0, flash_buff, 1) == CH_SUCCESS) {
+			chprintf(&SD1, "OK\n");
+			print_buff16(flash_buff);
+		}
+		else {
+			chprintf(&SD1, "FAILED\n");
+			continue;
+		}
+
+		chprintf(&SD1, "Erasing... ");
+		if (f25Erase(&FLASH25, 0, 1) == CH_SUCCESS) {
+			chprintf(&SD1, "OK\n");
+		}
+		else {
+			chprintf(&SD1, "FAILED\n");
+			continue;
+		}
+
+		chprintf(&SD1, "Reading... ");
+		if (blkRead(&FLASH25, 0, flash_buff, 1) == CH_SUCCESS) {
+			chprintf(&SD1, "OK\n");
+			print_buff16(flash_buff);
+		}
+		else {
+			chprintf(&SD1, "FAILED\n");
+			continue;
+		}
 	};
 
 	return 0;
