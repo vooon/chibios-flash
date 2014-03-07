@@ -23,7 +23,7 @@
 #include "chprintf.h"
 
 static const SPIConfig spi1_cfg = {
-	0,
+	NULL,
 	GPIOA,
 	GPIOA_SWDAT_FLASH_CS,
 	0, /* hi speed, mode0 */
@@ -66,6 +66,8 @@ static msg_t th_test(void *arg __attribute__((unused)))
 			continue;
 		}
 
+		chThdSleepMilliseconds(500);
+
 		chprintf(&SD1, "Reading... ");
 		if (blkRead(&FLASH25, 0, flash_buff, 1) == CH_SUCCESS) {
 			chprintf(&SD1, "OK\n");
@@ -75,6 +77,8 @@ static msg_t th_test(void *arg __attribute__((unused)))
 			chprintf(&SD1, "FAILED\n");
 			continue;
 		}
+
+		chThdSleepMilliseconds(500);
 
 		chprintf(&SD1, "Fill pattern 0xa5\n");
 		memset(flash_buff, 0xa5, sizeof(flash_buff));
@@ -88,6 +92,9 @@ static msg_t th_test(void *arg __attribute__((unused)))
 			continue;
 		}
 
+
+		chThdSleepMilliseconds(500);
+
 		memset(flash_buff, 0, sizeof(flash_buff));
 		chprintf(&SD1, "Reading... ");
 		if (blkRead(&FLASH25, 0, flash_buff, 1) == CH_SUCCESS) {
@@ -99,8 +106,11 @@ static msg_t th_test(void *arg __attribute__((unused)))
 			continue;
 		}
 
-		chprintf(&SD1, "Erasing... ");
-		if (f25Erase(&FLASH25, 0, 1) == CH_SUCCESS) {
+		chThdSleepMilliseconds(500);
+
+		chprintf(&SD1, "Erasing block... ");
+		/* NOTE: one erase block == 16 pages */
+		if (f25Erase(&FLASH25, 0, 16) == CH_SUCCESS) {
 			chprintf(&SD1, "OK\n");
 		}
 		else {
@@ -108,10 +118,23 @@ static msg_t th_test(void *arg __attribute__((unused)))
 			continue;
 		}
 
+		chThdSleepMilliseconds(500);
+
 		chprintf(&SD1, "Reading... ");
 		if (blkRead(&FLASH25, 0, flash_buff, 1) == CH_SUCCESS) {
 			chprintf(&SD1, "OK\n");
 			print_buff16(flash_buff);
+		}
+		else {
+			chprintf(&SD1, "FAILED\n");
+			continue;
+		}
+
+		chThdSleepMilliseconds(500);
+
+		chprintf(&SD1, "Erasing chip... ");
+		if (f25Erase(&FLASH25, 0, UINT32_MAX) == CH_SUCCESS) {
+			chprintf(&SD1, "OK\n");
 		}
 		else {
 			chprintf(&SD1, "FAILED\n");

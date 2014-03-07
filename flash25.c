@@ -4,6 +4,30 @@
 
 #include "flash25.h"
 
+/*
+ * Configuration
+ */
+
+#if !defined(FLASH25_FAST_READ) && !defined(FLASH25_SLOW_READ)
+/* Use slow (< 25 MHz) reads by default */
+#define FLASH25_SLOW_READ
+#endif
+
+#if defined(FLASH25_FAST_READ) && defined(FLASH25_SLOW_READ)
+#error "Please select only one read method: FAST or SLOW"
+#endif
+
+#if !defined(FLASH25_SLOW_WRITE) && !defined(FLASH25_FAST_WRITE)
+/* Use byte program (not AAI) by default */
+#define FLASH25_SLOW_WRITE
+#endif
+
+#if defined(FLASH25_FAST_WRITE) && defined(FLASH25_SLOW_WRITE)
+#error "Please select only one write method: FAST (AAI) or SLOW"
+#endif
+
+/* Defines */
+
 /* SST25 command set */
 #define CMD_READ		0x03
 #define CMD_FAST_READ		0x0b
@@ -35,14 +59,6 @@
 
 #ifndef ARRAY_SIZE
 #define ARRAY_SIZE(arr)	(sizeof(arr)/sizeof(arr[0]))
-#endif
-
-#define DEBUG_FLASH25
-#ifdef DEBUG_FLASH25
-#include "chprintf.h"
-#define dbgPrint(fmt, args...)	chprintf(&SD1, "%s: " fmt "\n", __func__, ##args)
-#else
-#define dbgPrint(fmt, args...)
 #endif
 
 #define FLASH_TIMEOUT	MS2ST(10)
@@ -104,7 +120,6 @@ static bool_t flash_is_busy(const Flash25Config *cfg)
 	uint8_t stat;
 
 	flash_transfer(cfg, &cmd, 1, &stat, 1);
-	dbgPrint("sr: %02x", stat);
 	return !!(stat & STAT_BUSY);
 }
 
@@ -170,6 +185,7 @@ static void flash_prepare_cmd(uint8_t *buff, uint8_t cmd, uint32_t addr)
 	buff[3] = addr & 0xff;
 }
 
+#ifdef FLASH25_SLOW_READ
 /**
  * @brief Normal read (F_clk < 25 MHz)
  * @notapi
@@ -178,11 +194,13 @@ static void flash_read(const Flash25Config *cfg, uint32_t addr,
 		uint8_t *buffer, uint32_t nbytes)
 {
 	uint8_t cmd[4];
-	dbgPrint("addr: 0x%06x, nbytes: %d", addr, nbytes);
+
 	flash_prepare_cmd(cmd, CMD_READ, addr);
 	flash_transfer(cfg, cmd, sizeof(cmd), buffer, nbytes);
 }
+#endif /* FLASH25_SLOW_READ */
 
+#ifdef FLASH25_FAST_READ
 /**
  * @brief Fast read (F_clk < 80 MHz)
  * @notapi
@@ -191,11 +209,12 @@ static void flash_fast_read(const Flash25Config *cfg, uint32_t addr,
 		uint8_t *buffer, uint32_t nbytes)
 {
 	uint8_t cmd[5];
-	dbgPrint("addr: 0x%06x, nbytes: %d", addr, nbytes);
+
 	flash_prepare_cmd(cmd, CMD_FAST_READ, addr);
 	cmd[4] = 0xa5; /* dummy byte */
 	flash_transfer(cfg, cmd, sizeof(cmd), buffer, nbytes);
 }
+#endif /* FLASH25_FAST_READ */
 
 /**
  * @brief Set/Reset write lock
@@ -203,10 +222,21 @@ static void flash_fast_read(const Flash25Config *cfg, uint32_t addr,
  */
 static void flash_wrlock(const Flash25Config *cfg, bool_t lock)
 {
-	uint8_t cmd = (lock)? CMD_WREN : CMD_WRDI;
+	uint8_t cmd = (lock)? CMD_WRDI : CMD_WREN;
 	flash_transfer(cfg, &cmd, 1, NULL, 0);
 }
 
+/**
+ * @brief Enables/Disables SO as hw busy pin
+ * @notapi
+ */
+static void flash_hw_busy(const Flash25Config *cfg, bool_t enable)
+{
+	uint8_t cmd = (enable)? CMD_EBSY : CMD_DBSY;
+	flash_transfer(cfg, &cmd, 1, NULL, 0);
+}
+
+#ifdef FLASH25_SLOW_WRITE
 /**
  * @brief Slow write (one byte per cycle)
  * @return CH_FAILED if timeout occurs
@@ -237,7 +267,9 @@ static bool_t flash_write_byte(const Flash25Config *cfg, uint32_t addr,
 
 	return ret;
 }
+#endif /* FLASH25_SLOW_WRITE */
 
+#ifdef FLASH25_FAST_WRITE
 /**
  * @brief Fast write (word per cycle)
  * Based on sst25.c mtd driver from NuttX
@@ -319,6 +351,7 @@ static bool_t flash_write_word(const Flash25Config *cfg, uint32_t addr,
 
 	return CH_SUCCESS;
 }
+#endif /* FLASH25_FAST_WRITE */
 
 static bool_t flash_chip_erase(const Flash25Config *cfg)
 {
@@ -380,8 +413,8 @@ static bool_t f25_connect(Flash25Driver *inst)
 			inst->nr_pages = ptbl->nr_pages;
 
 			/* disable write protection BP[0..3] = 0 */
-			//flash_wrsr(inst->config, 0);
-			//flash_wrsr(inst->config, 0);
+			flash_hw_busy(inst->config, false);
+			flash_wrsr(inst->config, 0);
 			return CH_SUCCESS;
 		}
 
@@ -401,8 +434,11 @@ static bool_t f25_read(Flash25Driver *inst, uint32_t startblk,
 
 	chDbgCheck(inst->state == BLK_ACTIVE, "f25_read()");
 
+#ifdef FLASH25_SLOW_READ
 	flash_read(inst->config, addr, buffer, nbytes);
-	//flash_fast_read(inst->config, addr, buffer, nbytes);
+#else /* FLASH25_FAST_READ */
+	flash_fast_read(inst->config, addr, buffer, nbytes);
+#endif
 	return CH_SUCCESS;
 }
 
@@ -418,8 +454,11 @@ static bool_t f25_write(Flash25Driver *inst, uint32_t startblk,
 
 	chDbgCheck(inst->state == BLK_ACTIVE, "f25_write()");
 
-	//return flash_write_byte(inst->config, addr, buffer, nbytes);
+#ifdef FLASH25_SLOW_WRITE
+	return flash_write_byte(inst->config, addr, buffer, nbytes);
+#else /* FLASH25_FAST_WRITE */
 	return flash_write_word(inst->config, addr, buffer, nbytes);
+#endif
 }
 
 /**
