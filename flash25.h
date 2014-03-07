@@ -7,7 +7,7 @@
 
 #define _flash25_driver_methods 					\
 	_base_block_device_methods 					\
-	bool_t (*erase)(void *instance, uint32_t startsect,		\
+	bool_t (*erase)(void *instance, uint32_t startblk,		\
 			uint32_t n);
 
 #define _flash25_driver_data						\
