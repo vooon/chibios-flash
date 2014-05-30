@@ -33,6 +33,7 @@
 #define _base_mtd_driver_data						\
 	_base_block_device_data						\
 	const char *name;						\
+	void *parent;							\
 	uint16_t page_size;						\
 	uint16_t erase_size;						\
 	uint32_t nr_pages;						\

@@ -492,7 +492,7 @@ static bool_t sst25_erase(SST25Driver *inst, uint32_t startblk, uint32_t n)
 	chDbgCheck(inst->state == BLK_ACTIVE, "sst25_erase()");
 
 	startblk += inst->start_page;
-	if (startblk == 0 && n >= inst->nr_pages) {
+	if (startblk == 0 && n >= inst->nr_pages && inst->parent == NULL) {
 		MTD_DEBUG("sst25: %s: perform chip erase", mtdGetName(inst));
 		return sst25_ll_chip_erase(inst->config);
 	}
@@ -569,6 +569,7 @@ void sst25ObjectInit(SST25Driver *flp)
 
 	flp->vmt = &sst25_vmt;
 	flp->config = NULL;
+	flp->parent = NULL;
 	flp->state = BLK_STOP;
 	flp->jdec_id = 0;
 	flp->page_size = 0;
@@ -625,6 +626,7 @@ void sst25InitPartition(SST25Driver *flp, SST25Driver *part_flp, const struct mt
 	FLP_COPY(jdec_id);
 
 	part_flp->name = part_def->name;
+	part_flp->parent = flp;
 	part_flp->start_page = part_def->start_page;
 
 	part_flp->nr_pages = part_def->nr_pages;
