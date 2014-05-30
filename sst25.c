@@ -71,7 +71,7 @@ struct sst25_ll_info {
 	uint32_t jdec_id;
 	uint16_t page_size;
 	uint16_t erase_size;
-	uint16_t nr_pages;
+	uint32_t nr_pages;
 };
 
 static const struct sst25_ll_info sst25_ll_info_table[] = {
@@ -412,8 +412,8 @@ static bool_t sst25_connect(SST25Driver *inst)
 			sst25_ll_hw_busy(inst->config, false);
 			sst25_ll_wrsr(inst->config, 0);
 
-			MTD_INFO("sst25: %s connected bs:%u bnr:%u eb:%u total %u kB",
-					mtdGetName(name),
+			MTD_INFO("sst25: %s: %u * %u erase: %u, total %u kB",
+					mtdGetName(inst),
 					inst->page_size, inst->nr_pages, inst->erase_size,
 					mtdGetSize(inst) / 1024);
 			return CH_SUCCESS;
@@ -437,6 +437,10 @@ static bool_t sst25_read(SST25Driver *inst, uint32_t startblk,
 	uint32_t nbytes = n * inst->page_size;
 
 	chDbgCheck(inst->state == BLK_ACTIVE, "sst25_read()");
+	if (n > inst->nr_pages) {
+		MTD_DEBUG("sst25: %s: read oversize (%u)", mtdGetName(inst), n);
+		return CH_FAILED;
+	}
 
 #ifdef SST25_SLOW_READ
 	sst25_ll_read(inst->config, addr, buffer, nbytes);
@@ -459,6 +463,10 @@ static bool_t sst25_write(SST25Driver *inst, uint32_t startblk,
 	uint32_t nbytes = n * inst->page_size;
 
 	chDbgCheck(inst->state == BLK_ACTIVE, "sst25_write()");
+	if (n > inst->nr_pages) {
+		MTD_DEBUG("sst25: %s: write oversize (%u)", mtdGetName(inst), n);
+		return CH_FAILED;
+	}
 
 #ifdef SST25_SLOW_WRITE
 	return sst25_ll_write_byte(inst->config, addr, buffer, nbytes);
@@ -493,8 +501,10 @@ static bool_t sst25_erase(SST25Driver *inst, uint32_t startblk, uint32_t n)
 	if (n > inst->nr_pages)
 		n = inst->nr_pages;
 
-	MTD_DEBUG("sst25: %s: psrform erase from %u, %u pages", mtdGetName(inst),
-			startblk - inst->start_page, n);
+	MTD_DEBUG("sst25: %s: erase [%u..%u], %u pages", mtdGetName(inst),
+			startblk - inst->start_page,
+			startblk - inst->start_page + n,
+			n);
 	chDbgAssert((n % (inst->erase_size / inst->page_size)) == 0,
 			"sst25_erase()", "invalid size");
 
@@ -621,9 +631,26 @@ void sst25InitPartition(SST25Driver *flp, SST25Driver *part_flp, const struct mt
 	if (part_flp->nr_pages > flp->nr_pages)
 		part_flp->nr_pages = flp->nr_pages - part_def->start_page;
 
-	MTD_INFO("sst25: %s part %s: start %u, %u pages, total %u kB",
+	MTD_INFO("sst25: %s/%s: [%u..%u] %u pages, total %u kB",
 			mtdGetName(flp), mtdGetName(part_flp),
-			part_flp->start_page, part_flp->nr_pages,
+			part_flp->start_page,
+			part_flp->start_page + part_flp->nr_pages,
+			part_flp->nr_pages,
 			mtdGetSize(part_flp) / 1024);
+}
+
+/**
+ * @brief init partitons from table
+ * @api
+ */
+void sst25InitPartitionTable(SST25Driver *flp, const struct sst25_partition *part_defs)
+{
+	const struct sst25_partition *ptbl = NULL;
+
+	chDbgCheck(flp != NULL, "sst25InitPartitionTable");
+	chDbgCheck(part_defs != NULL, "sst25InitPartitionTable");
+
+	for (ptbl = part_defs; ptbl->partp != NULL; ptbl++)
+		sst25InitPartition(flp, ptbl->partp, &(ptbl->definition));
 }
 

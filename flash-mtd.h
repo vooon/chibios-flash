@@ -4,6 +4,7 @@
 
 /* ChibiOS block */
 #include "hal.h"
+#include "mtd_config.h"
 
 /* -*- debugging print -*- */
 
@@ -34,7 +35,7 @@
 	const char *name;						\
 	uint16_t page_size;						\
 	uint16_t erase_size;						\
-	uint16_t nr_pages;						\
+	uint32_t nr_pages;						\
 	uint32_t start_page;
 
 
@@ -44,8 +45,8 @@ struct BaseMTDDriverVMT {
 
 struct mtd_partition {
 	const char *name;
-	uint16_t start_page;
-	uint16_t nr_pages;
+	uint32_t start_page;
+	uint32_t nr_pages;
 };
 
 /* -*- methods -*- */
@@ -55,5 +56,7 @@ struct mtd_partition {
 #define mtdGetSize(flp)		((flp)->page_size * (flp)->nr_pages)
 #define mtdGetName(flp)		((flp)->name)
 #define mtdErase(flp, sect, n)	((flp)->vmt->erase(flp, sect, n))
+
+#include "sst25.h"
 
 #endif /* FLASH25_H */
