@@ -30,8 +30,8 @@ static const SPIConfig spi1_cfg = {
 	0
 };
 
-static Flash25Driver FLASH25;
-static const Flash25Config flash_cfg = {
+static SST25Driver FLASH25;
+static const SST25Config flash_cfg = {
 	.spip = &SPID1,
 	.spicfg = &spi1_cfg
 };
@@ -49,17 +49,20 @@ static void print_buff16(uint8_t buf[16])
 static WORKING_AREA(wa_test, 1024);
 static msg_t th_test(void *arg __attribute__((unused)))
 {
-	f25ObjectInit(&FLASH25);
-	f25Start(&FLASH25, &flash_cfg);
+	sst25ObjectInit(&FLASH25);
+	sst25Start(&FLASH25, &flash_cfg);
 
 	while (true) {
 		chThdSleepMilliseconds(5000);
 		chprintf(&SD1, "Connecting... ");
 
 		if (blkConnect(&FLASH25) == CH_SUCCESS) {
-			chprintf(&SD1, "OK, JDEC ID: 0x%06X\n", f25GetJdecID(&FLASH25));
-			chprintf(&SD1, "Page sz: %d, erase sz: %d, pages: %d\n",
-					FLASH25.page_size, FLASH25.erase_size, FLASH25.nr_pages);
+			chprintf(&SD1, "OK, JDEC ID: 0x%06X: %s\n", sst25GetJdecID(&FLASH25), mtdGetName(&FLASH25));
+			chprintf(&SD1, "Page sz: %d, erase sz: %d, pages: %d, total %d kB\n",
+					mtdGetPageSize(&FLASH25),
+					mtdGetEraseSize(&FLASH25),
+					FLASH25.nr_pages,
+					mtdGetSize(&FLASH25));
 		}
 		else {
 			chprintf(&SD1, "FAILED\n");
@@ -110,7 +113,7 @@ static msg_t th_test(void *arg __attribute__((unused)))
 
 		chprintf(&SD1, "Erasing block... ");
 		/* NOTE: one erase block == 16 pages */
-		if (f25Erase(&FLASH25, 0, 16) == CH_SUCCESS) {
+		if (mtdErase(&FLASH25, 0, 16) == CH_SUCCESS) {
 			chprintf(&SD1, "OK\n");
 		}
 		else {
@@ -133,7 +136,7 @@ static msg_t th_test(void *arg __attribute__((unused)))
 		chThdSleepMilliseconds(500);
 
 		chprintf(&SD1, "Erasing chip... ");
-		if (f25Erase(&FLASH25, 0, UINT32_MAX) == CH_SUCCESS) {
+		if (mtdErase(&FLASH25, 0, UINT32_MAX) == CH_SUCCESS) {
 			chprintf(&SD1, "OK\n");
 		}
 		else {
