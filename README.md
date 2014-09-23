@@ -1,7 +1,8 @@
 chibios-flash
 =============
 
-ChibiOS/RT driver for 25xx flash with block IO (like mtd in linux)
+ChibiOS/RT 3 driver for 25xx flash with block IO API (like mtd in linux).
+
 
 Supported devices
 -----------------

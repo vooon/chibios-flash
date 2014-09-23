@@ -46,7 +46,7 @@
  */
 #define _base_mtd_driver_methods 					\
 	_base_block_device_methods 					\
-	bool_t (*erase)(void *instance, uint32_t startblk,		\
+	bool (*erase)(void *instance, uint32_t startblk,		\
 			uint32_t n);
 
 
@@ -80,6 +80,7 @@ struct mtd_partition {
 #define mtdGetName(flp)		((flp)->name)
 #define mtdErase(flp, sect, n)	((flp)->vmt->erase(flp, sect, n))
 
+#include <inttypes.h>
 #include "sst25.h"
 
 #endif /* FLASH25_H */

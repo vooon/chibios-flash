@@ -133,7 +133,7 @@ static void sst25_ll_transfer(const SST25Config *cfg,
  * @brief checks busy flag
  * @notapi
  */
-static bool_t sst25_ll_is_busy(const SST25Config *cfg)
+static bool sst25_ll_is_busy(const SST25Config *cfg)
 {
 	uint8_t cmd = CMD_RDSR;
 	uint8_t stat;
@@ -144,20 +144,21 @@ static bool_t sst25_ll_is_busy(const SST25Config *cfg)
 
 /**
  * @brief wait write completion
- * @return CH_FAILED if timeout occurs
+ * @return HAL_FAILED if timeout occurs
  * @notapi
  */
-static bool_t sst25_ll_wait_complete(const SST25Config *cfg, systime_t timeout)
+static bool sst25_ll_wait_complete(const SST25Config *cfg, systime_t timeout)
 {
-	systime_t now = chTimeNow();
+	systime_t start = osalOsGetSystemTimeX();
 	while (sst25_ll_is_busy(cfg)) {
-		if (chTimeElapsedSince(now) >= timeout)
-			return CH_FAILED; /* Timeout */
+		systime_t now = osalOsGetSystemTimeX();
+		if (now - start >= timeout)
+			return HAL_FAILED; /* Timeout */
 
 		chThdYield();
 	}
 
-	return CH_SUCCESS;
+	return HAL_SUCCESS;
 }
 
 /**
@@ -237,7 +238,7 @@ static void sst25_ll_fast_read(const SST25Config *cfg, uint32_t addr,
  * @brief Set/Reset write lock
  * @notapi
  */
-static void sst25_ll_wrlock(const SST25Config *cfg, bool_t lock)
+static void sst25_ll_wrlock(const SST25Config *cfg, bool lock)
 {
 	uint8_t cmd = (lock)? CMD_WRDI : CMD_WREN;
 	sst25_ll_transfer(cfg, &cmd, 1, NULL, 0);
@@ -247,7 +248,7 @@ static void sst25_ll_wrlock(const SST25Config *cfg, bool_t lock)
  * @brief Enables/Disables SO as hw busy pin
  * @notapi
  */
-static void sst25_ll_hw_busy(const SST25Config *cfg, bool_t enable)
+static void sst25_ll_hw_busy(const SST25Config *cfg, bool enable)
 {
 	uint8_t cmd = (enable)? CMD_EBSY : CMD_DBSY;
 	sst25_ll_transfer(cfg, &cmd, 1, NULL, 0);
@@ -256,14 +257,14 @@ static void sst25_ll_hw_busy(const SST25Config *cfg, bool_t enable)
 #ifdef SST25_SLOW_WRITE
 /**
  * @brief Slow write (one byte per cycle)
- * @return CH_FAILED if timeout occurs
+ * @return HAL_FAILED if timeout occurs
  * @notapi
  */
-static bool_t sst25_ll_write_byte(const SST25Config *cfg, uint32_t addr,
+static bool sst25_ll_write_byte(const SST25Config *cfg, uint32_t addr,
 		const uint8_t *buffer, uint32_t nbytes)
 {
 	uint8_t cmd[5];
-	bool_t ret;
+	bool ret;
 
 	for (; nbytes > 0; nbytes--, buffer++, addr++) {
 		/* skip bytes equal to erased state */
@@ -278,7 +279,7 @@ static bool_t sst25_ll_write_byte(const SST25Config *cfg, uint32_t addr,
 		ret = sst25_ll_wait_complete(cfg, FLASH_TIMEOUT);
 		sst25_ll_wrlock(cfg, true);
 
-		if (ret == CH_FAILED)
+		if (ret == HAL_FAILED)
 			break;
 	}
 
@@ -291,10 +292,10 @@ static bool_t sst25_ll_write_byte(const SST25Config *cfg, uint32_t addr,
  * @brief Fast write (word per cycle)
  * Based on sst25.c mtd driver from NuttX
  *
- * @return CH_FAILED if timeout occurs
+ * @return HAL_FAILED if timeout occurs
  * @notapi
  */
-static bool_t sst25_ll_write_word(const SST25Config *cfg, uint32_t addr,
+static bool sst25_ll_write_word(const SST25Config *cfg, uint32_t addr,
 		const uint8_t *buff, uint32_t nbytes)
 {
 	uint32_t nwords = (nbytes + 1) / 2;
@@ -309,7 +310,7 @@ static bool_t sst25_ll_write_word(const SST25Config *cfg, uint32_t addr,
 		}
 
 		if (nwords == 0)
-			return CH_SUCCESS; /* all data written */
+			return HAL_SUCCESS; /* all data written */
 
 		sst25_ll_prepare_cmd(cmd, CMD_AAI_WORD_PROG, addr);
 		sst25_ll_wrlock(cfg, false);
@@ -328,9 +329,9 @@ static bool_t sst25_ll_write_word(const SST25Config *cfg, uint32_t addr,
 		spiReleaseBus(cfg->spip);
 #endif
 
-		if (sst25_ll_wait_complete(cfg, FLASH_TIMEOUT) == CH_FAILED) {
+		if (sst25_ll_wait_complete(cfg, FLASH_TIMEOUT) == HAL_FAILED) {
 			sst25_ll_wrlock(cfg, true);
-			return CH_FAILED;
+			return HAL_FAILED;
 		}
 
 		nwords--;
@@ -353,9 +354,9 @@ static bool_t sst25_ll_write_word(const SST25Config *cfg, uint32_t addr,
 			spiReleaseBus(cfg->spip);
 #endif
 
-			if (sst25_ll_wait_complete(cfg, FLASH_TIMEOUT) == CH_FAILED) {
+			if (sst25_ll_wait_complete(cfg, FLASH_TIMEOUT) == HAL_FAILED) {
 				sst25_ll_wrlock(cfg, true);
-				return CH_FAILED;
+				return HAL_FAILED;
 			}
 
 			nwords--;
@@ -366,14 +367,14 @@ static bool_t sst25_ll_write_word(const SST25Config *cfg, uint32_t addr,
 		sst25_ll_wrlock(cfg, true);
 	}
 
-	return CH_SUCCESS;
+	return HAL_SUCCESS;
 }
 #endif /* SST25_FAST_WRITE */
 
-static bool_t sst25_ll_chip_erase(const SST25Config *cfg)
+static bool sst25_ll_chip_erase(const SST25Config *cfg)
 {
 	uint8_t cmd = CMD_CHIP_ERASE;
-	bool_t ret;
+	bool ret;
 
 	sst25_ll_wrlock(cfg, false);
 	sst25_ll_transfer(cfg, &cmd, 1, NULL, 0);
@@ -382,10 +383,10 @@ static bool_t sst25_ll_chip_erase(const SST25Config *cfg)
 	return ret;
 }
 
-static bool_t sst25_ll_erase_block(const SST25Config *cfg, uint32_t addr)
+static bool sst25_ll_erase_block(const SST25Config *cfg, uint32_t addr)
 {
 	uint8_t cmd[4];
-	bool_t ret;
+	bool ret;
 
 	sst25_ll_prepare_cmd(cmd, CMD_ERASE_4K, addr);
 	sst25_ll_wrlock(cfg, false);
@@ -403,9 +404,9 @@ static bool_t sst25_ll_erase_block(const SST25Config *cfg, uint32_t addr)
  * @brief for unused fields of VMT
  * @notapi
  */
-static bool_t sst25_vmt_nop(void *instance __attribute__((unused)))
+static bool sst25_vmt_nop(void *instance __attribute__((unused)))
 {
-	return CH_SUCCESS;
+	return HAL_SUCCESS;
 }
 
 /**
@@ -413,7 +414,7 @@ static bool_t sst25_vmt_nop(void *instance __attribute__((unused)))
  * Select page/erase/size of chip
  * @api
  */
-static bool_t sst25_connect(SST25Driver *inst)
+static bool sst25_connect(SST25Driver *inst)
 {
 	const struct sst25_ll_info *ptbl;
 
@@ -434,23 +435,23 @@ static bool_t sst25_connect(SST25Driver *inst)
 			sst25_ll_hw_busy(inst->config, false);
 			sst25_ll_wrsr(inst->config, 0);
 
-			MTD_INFO("sst25: %s: %u * %u erase: %u, total %u kB",
+			MTD_INFO("sst25: %s: %" PRIu16 " * %" PRIu32 " erase: %" PRIu16 ", total %lu kB",
 					mtdGetName(inst),
 					inst->page_size, inst->nr_pages, inst->erase_size,
 					mtdGetSize(inst) / 1024);
-			return CH_SUCCESS;
+			return HAL_SUCCESS;
 		}
 
 	inst->state = BLK_STOP;
-	MTD_DEBUG("sst25: connection failed: JDEC ID 0x%06x", inst->jdec_id);
-	return CH_FAILED;
+	MTD_DEBUG("sst25: connection failed: JDEC ID 0x%06" PRIu32 "x", inst->jdec_id);
+	return HAL_FAILED;
 }
 
 /**
  * @brief read blocks from flash
  * @api
  */
-static bool_t sst25_read(SST25Driver *inst, uint32_t startblk,
+static bool sst25_read(SST25Driver *inst, uint32_t startblk,
 		uint8_t *buffer, uint32_t n)
 {
 	startblk += inst->start_page;
@@ -458,10 +459,10 @@ static bool_t sst25_read(SST25Driver *inst, uint32_t startblk,
 	uint32_t addr = startblk * inst->page_size;
 	uint32_t nbytes = n * inst->page_size;
 
-	chDbgCheck(inst->state == BLK_ACTIVE, "sst25_read()");
+	osalDbgCheck(inst->state == BLK_ACTIVE);
 	if (n > inst->nr_pages) {
-		MTD_DEBUG("sst25: %s: read oversize (%u)", mtdGetName(inst), n);
-		return CH_FAILED;
+		MTD_DEBUG("sst25: %s: read oversize (%" PRIu32 ")", mtdGetName(inst), n);
+		return HAL_FAILED;
 	}
 
 #ifdef SST25_SLOW_READ
@@ -469,14 +470,14 @@ static bool_t sst25_read(SST25Driver *inst, uint32_t startblk,
 #else /* SST25_FAST_READ */
 	sst25_ll_fast_read(inst->config, addr, buffer, nbytes);
 #endif
-	return CH_SUCCESS;
+	return HAL_SUCCESS;
 }
 
 /**
  * @brief writes blocks to flash
  * @api
  */
-static bool_t sst25_write(SST25Driver *inst, uint32_t startblk,
+static bool sst25_write(SST25Driver *inst, uint32_t startblk,
 		const uint8_t *buffer, uint32_t n)
 {
 	startblk += inst->start_page;
@@ -484,10 +485,10 @@ static bool_t sst25_write(SST25Driver *inst, uint32_t startblk,
 	uint32_t addr = startblk * inst->page_size;
 	uint32_t nbytes = n * inst->page_size;
 
-	chDbgCheck(inst->state == BLK_ACTIVE, "sst25_write()");
+	osalDbgCheck(inst->state == BLK_ACTIVE);
 	if (n > inst->nr_pages) {
-		MTD_DEBUG("sst25: %s: write oversize (%u)", mtdGetName(inst), n);
-		return CH_FAILED;
+		MTD_DEBUG("sst25: %s: write oversize (%" PRIu32 ")", mtdGetName(inst), n);
+		return HAL_FAILED;
 	}
 
 #ifdef SST25_SLOW_WRITE
@@ -505,13 +506,13 @@ static bool_t sst25_write(SST25Driver *inst, uint32_t startblk,
  * @param[in] n block count (must be equal to erase size, eg. for 4096 es, 256 ps -> n % 4096/256)
  * @api
  */
-static bool_t sst25_erase(SST25Driver *inst, uint32_t startblk, uint32_t n)
+static bool sst25_erase(SST25Driver *inst, uint32_t startblk, uint32_t n)
 {
 	uint32_t addr;
 	uint32_t nblocks;
-	bool_t ret = CH_FAILED;
+	bool ret = HAL_FAILED;
 
-	chDbgCheck(inst->state == BLK_ACTIVE, "sst25_erase()");
+	osalDbgCheck(inst->state == BLK_ACTIVE);
 
 	startblk += inst->start_page;
 	if (startblk == 0 && n >= inst->nr_pages && inst->parent == NULL) {
@@ -523,18 +524,18 @@ static bool_t sst25_erase(SST25Driver *inst, uint32_t startblk, uint32_t n)
 	if (n > inst->nr_pages)
 		n = inst->nr_pages;
 
-	MTD_DEBUG("sst25: %s: erase [%u..%u], %u pages", mtdGetName(inst),
+	MTD_DEBUG("sst25: %s: erase [%" PRIu32 "..%" PRIu32 "], %" PRIu32 " pages", mtdGetName(inst),
 			startblk - inst->start_page,
 			startblk - inst->start_page + n,
 			n);
-	chDbgAssert((n % (inst->erase_size / inst->page_size)) == 0,
-			"sst25_erase()", "invalid size");
+	osalDbgAssert((n % (inst->erase_size / inst->page_size)) == 0,
+			"invalid size");
 
 	addr = startblk * inst->page_size;
 	nblocks = (n + 1) / (inst->erase_size / inst->page_size);
 	for (; nblocks > 0; nblocks--, addr += inst->erase_size) {
 		ret = sst25_ll_erase_block(inst->config, addr);
-		if (ret == CH_FAILED)
+		if (ret == HAL_FAILED)
 			break;
 	}
 
@@ -545,26 +546,26 @@ static bool_t sst25_erase(SST25Driver *inst, uint32_t startblk, uint32_t n)
  * @brief Get block device info (page size and noumber of pages)
  * @api
  */
-static bool_t sst25_get_info(SST25Driver *inst, BlockDeviceInfo *bdip)
+static bool sst25_get_info(SST25Driver *inst, BlockDeviceInfo *bdip)
 {
 	if (inst->state != BLK_ACTIVE)
-		return CH_FAILED;
+		return HAL_FAILED;
 
 	bdip->blk_size = inst->page_size;
 	bdip->blk_num = inst->nr_pages;
-	return CH_SUCCESS;
+	return HAL_SUCCESS;
 }
 
 static const struct BaseMTDDriverVMT sst25_vmt = {
 	.is_inserted = sst25_vmt_nop,
 	.is_protected = sst25_vmt_nop,
-	.connect = (bool_t (*)(void*)) sst25_connect,
+	.connect = (bool (*)(void*)) sst25_connect,
 	.disconnect = sst25_vmt_nop,
-	.read = (bool_t (*)(void*, uint32_t, uint8_t*, uint32_t)) sst25_read,
-	.write = (bool_t (*)(void*, uint32_t, const uint8_t*, uint32_t)) sst25_write,
+	.read = (bool (*)(void*, uint32_t, uint8_t*, uint32_t)) sst25_read,
+	.write = (bool (*)(void*, uint32_t, const uint8_t*, uint32_t)) sst25_write,
 	.sync = sst25_vmt_nop,
-	.get_info = (bool_t (*)(void*, BlockDeviceInfo*)) sst25_get_info,
-	.erase = (bool_t (*)(void*, uint32_t, uint32_t)) sst25_erase
+	.get_info = (bool (*)(void*, BlockDeviceInfo*)) sst25_get_info,
+	.erase = (bool (*)(void*, uint32_t, uint32_t)) sst25_erase
 };
 
 /*
@@ -587,7 +588,7 @@ void sst25Init(void)
  */
 void sst25ObjectInit(SST25Driver *flp)
 {
-	chDbgCheck(flp != NULL, "sst25ObjectInit");
+	osalDbgCheck(flp != NULL);
 
 	flp->vmt = &sst25_vmt;
 	flp->config = NULL;
@@ -606,9 +607,9 @@ void sst25ObjectInit(SST25Driver *flp)
  */
 void sst25Start(SST25Driver *flp, const SST25Config *cfg)
 {
-	chDbgCheck((flp != NULL) && (cfg != NULL), "sst25Start");
-	chDbgAssert((flp->state == BLK_STOP) || (flp->state == BLK_ACTIVE),
-			"sst25Start()", "invalid state");
+	osalDbgCheck((flp != NULL) && (cfg != NULL));
+	osalDbgAssert((flp->state == BLK_STOP) || (flp->state == BLK_ACTIVE),
+			"invalid state");
 
 	flp->config = cfg;
 	//flp->state = BLK_ACTIVE;
@@ -620,9 +621,9 @@ void sst25Start(SST25Driver *flp, const SST25Config *cfg)
  */
 void sst25Stop(SST25Driver *flp)
 {
-	chDbgCheck(flp != NULL, "sst25Stop");
-	chDbgAssert((flp->state == BLK_STOP) || (flp->state == BLK_ACTIVE),
-			"sst25Start()", "invalid state");
+	osalDbgCheck(flp != NULL);
+	osalDbgAssert((flp->state == BLK_STOP) || (flp->state == BLK_ACTIVE),
+			"invalid state");
 
 	spiStop(flp->config->spip);
 	flp->state = BLK_STOP;
@@ -634,10 +635,10 @@ void sst25Stop(SST25Driver *flp)
  */
 void sst25InitPartition(SST25Driver *flp, SST25Driver *part_flp, const struct mtd_partition *part_def)
 {
-	chDbgCheck(flp != NULL, "sst25InitPartition");
-	chDbgCheck(part_flp != NULL, "sst25InitPartition");
-	chDbgAssert((flp->state == BLK_ACTIVE),
-			"sst25InitPartition()", "invalid state");
+	osalDbgCheck(flp != NULL);
+	osalDbgCheck(part_flp != NULL);
+	osalDbgAssert((flp->state == BLK_ACTIVE),
+			"invalid state");
 
 #define FLP_COPY(field)	(part_flp->field) = (flp->field)
 	FLP_COPY(vmt);
@@ -655,7 +656,7 @@ void sst25InitPartition(SST25Driver *flp, SST25Driver *part_flp, const struct mt
 	if (part_flp->nr_pages > flp->nr_pages)
 		part_flp->nr_pages = flp->nr_pages - part_def->start_page;
 
-	MTD_INFO("sst25: %s/%s: [%u..%u] %u pages, total %u kB",
+	MTD_INFO("sst25: %s/%s: [%" PRIu32 "..%" PRIu32 "] %" PRIu32 " pages, total %lu kB",
 			mtdGetName(flp), mtdGetName(part_flp),
 			part_flp->start_page,
 			part_flp->start_page + part_flp->nr_pages,
@@ -671,8 +672,8 @@ void sst25InitPartitionTable(SST25Driver *flp, const struct sst25_partition *par
 {
 	const struct sst25_partition *ptbl = NULL;
 
-	chDbgCheck(flp != NULL, "sst25InitPartitionTable");
-	chDbgCheck(part_defs != NULL, "sst25InitPartitionTable");
+	osalDbgCheck(flp != NULL);
+	osalDbgCheck(part_defs != NULL);
 
 	for (ptbl = part_defs; ptbl->partp != NULL; ptbl++)
 		sst25InitPartition(flp, ptbl->partp, &(ptbl->definition));
