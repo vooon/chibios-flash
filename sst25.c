@@ -50,6 +50,11 @@
 
 /* Defines */
 
+#if !SPI_USE_MUTUAL_EXCLUSION
+#define spiAcquireBus(spip);
+#define spiReleaseBus(spip);
+#endif
+
 /* SST25 command set */
 #define CMD_READ		0x03
 #define CMD_FAST_READ		0x0b
@@ -113,9 +118,7 @@ static void sst25_ll_transfer(const SST25Config *cfg,
 		const uint8_t *txbuf, size_t txlen,
 		uint8_t *rxbuf, size_t rxlen)
 {
-#if SPI_USE_MUTUAL_EXCLUSION
 	spiAcquireBus(cfg->spip);
-#endif
 
 	spiStart(cfg->spip, cfg->spicfg);
 	spiSelect(cfg->spip);
@@ -124,9 +127,7 @@ static void sst25_ll_transfer(const SST25Config *cfg,
 		spiReceive(cfg->spip, rxlen, rxbuf);
 	spiUnselect(cfg->spip);
 
-#if SPI_USE_MUTUAL_EXCLUSION
 	spiReleaseBus(cfg->spip);
-#endif
 }
 
 /**
@@ -315,9 +316,7 @@ static bool sst25_ll_write_word(const SST25Config *cfg, uint32_t addr,
 		sst25_ll_prepare_cmd(cmd, CMD_AAI_WORD_PROG, addr);
 		sst25_ll_wrlock(cfg, false);
 
-#if SPI_USE_MUTUAL_EXCLUSION
 		spiAcquireBus(cfg->spip);
-#endif
 
 		spiStart(cfg->spip, cfg->spicfg);
 		spiSelect(cfg->spip);
@@ -325,9 +324,7 @@ static bool sst25_ll_write_word(const SST25Config *cfg, uint32_t addr,
 		spiSend(cfg->spip, 2, buff);
 		spiUnselect(cfg->spip);
 
-#if SPI_USE_MUTUAL_EXCLUSION
 		spiReleaseBus(cfg->spip);
-#endif
 
 		if (sst25_ll_wait_complete(cfg, FLASH_TIMEOUT) == HAL_FAILED) {
 			sst25_ll_wrlock(cfg, true);
@@ -340,9 +337,7 @@ static bool sst25_ll_write_word(const SST25Config *cfg, uint32_t addr,
 
 		/* write 16-bit cunks */
 		while (nwords > 0 && (buff[0] != 0xff && buff[1] != 0xff)) {
-#if SPI_USE_MUTUAL_EXCLUSION
 			spiAcquireBus(cfg->spip);
-#endif
 
 			spiStart(cfg->spip, cfg->spicfg);
 			spiSelect(cfg->spip);
@@ -350,9 +345,7 @@ static bool sst25_ll_write_word(const SST25Config *cfg, uint32_t addr,
 			spiSend(cfg->spip, 2, buff);
 			spiUnselect(cfg->spip);
 
-#if SPI_USE_MUTUAL_EXCLUSION
 			spiReleaseBus(cfg->spip);
-#endif
 
 			if (sst25_ll_wait_complete(cfg, FLASH_TIMEOUT) == HAL_FAILED) {
 				sst25_ll_wrlock(cfg, true);
